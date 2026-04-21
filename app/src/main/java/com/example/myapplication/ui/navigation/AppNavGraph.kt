@@ -143,6 +143,7 @@ fun AppNavGraph(
         // ===== 新会话聊天页 =====
         // 点击新建session时跳转到这个页面
         // 这个页面包含底部输入栏，点击附件按钮才显示附件上传弹窗
+        // 发送纯文本消息时不跳转，留在当前页面显示消息记录和AI回复
         composable(Screen.NewChat.route) {
             NewChatScreen(
                 onNavigateBack = {
@@ -155,9 +156,17 @@ fun AppNavGraph(
                     navController.navigate(Screen.DocumentUpload.route)
                 },
                 onSubmitPrompt = { prompt, uri ->
-                    // TODO: 处理用户输入的提示词，调用AI服务
-                    // 暂时跳转到练习页面
-                    navController.navigate(Screen.Practice.createRoute(System.currentTimeMillis()))
+                    /**
+                     * 处理用户输入的提示词
+                     * 注意：发送纯文本消息时不跳转页面
+                     * 页面跳转只在以下情况发生：
+                     * 1. 点击"拍照" → onNavigateToCamera
+                     * 2. 点击"文档" → onNavigateToDocument
+                     * 3. 发送图片/文档时，由 NewChatScreen 内部处理
+                     */
+                    // TODO: 调用AI服务处理用户消息
+                    // 当前由 NewChatScreen 内部模拟AI回复
+                    // 不执行页面跳转，保持在当前聊天页面
                 }
             )
         }
