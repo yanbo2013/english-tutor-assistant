@@ -161,14 +161,16 @@ fun NewChatScreen(
     // 用于直接启动相机拍照
     // 使用 ActivityResultContracts.TakePicture() 直接启动系统相机
     // 拍照后不跳转页面，直接在当前页面显示缩略图
-    // 使用 rememberSaveable 确保在 Activity 重建时状态不丢失
-    var cameraImageUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    // 使用 rememberSaveable 保存 Uri 的字符串形式，确保在 Activity 重建时状态不丢失
+    var cameraImageUriString by rememberSaveable { mutableStateOf<String?>(null) }
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
         if (success) {
             // 拍照成功，使用之前保存的 Uri
-            cameraImageUri?.let { uri ->
+            cameraImageUriString?.let { uriString ->
+                val uri = Uri.parse(uriString)
+                
                 // ===== 在 Android 10+ 上更新 IS_PENDING 标志 =====
                 // 确保图片可以被其他应用访问
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -182,8 +184,8 @@ fun NewChatScreen(
                 currentImageBitmap = null
             }
         }
-        // 无论成功与否，清空 cameraImageUri
-        cameraImageUri = null
+        // 无论成功与否，清空 cameraImageUriString
+        cameraImageUriString = null
     }
     
     // ===== 文档选择启动器 =====
@@ -676,8 +678,9 @@ fun NewChatScreen(
                         )
                         
                         uri?.let { imageUri ->
-                            // 保存 Uri 用于后续使用
-                            cameraImageUri = imageUri
+                            // 保存 Uri 的字符串形式用于后续使用
+                            // 使用字符串形式更可靠，避免 Parcelable 在某些情况下的问题
+                            cameraImageUriString = imageUri.toString()
                             // 启动相机
                             takePictureLauncher.launch(imageUri)
                         }
