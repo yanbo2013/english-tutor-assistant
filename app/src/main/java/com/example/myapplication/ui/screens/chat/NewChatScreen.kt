@@ -2,8 +2,11 @@ package com.example.myapplication.ui.screens.chat
 
 import android.Manifest
 import android.app.Activity
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -33,6 +36,9 @@ import com.example.myapplication.utils.PermissionHelper
 import com.example.myapplication.utils.SpeechRecognizerHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 练习页面
@@ -137,7 +143,7 @@ fun NewChatScreen(
     }
     
     // ===== 图片选择启动器 =====
-    // 用于从相册选择图片或拍照
+    // 用于从相册选择图片
     // 选择后不跳转页面，直接在当前页面显示缩略图
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -147,6 +153,23 @@ fun NewChatScreen(
             // 不跳转页面，与发送普通消息流程相同
             currentImageUri = it
             currentImageBitmap = null
+        }
+    }
+    
+    // ===== 拍照启动器 =====
+    // 用于直接启动相机拍照
+    // 使用 ActivityResultContracts.TakePicture() 直接启动系统相机
+    // 拍照后不跳转页面，直接在当前页面显示缩略图
+    var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (success) {
+            // 拍照成功，使用之前保存的 Uri
+            cameraImageUri?.let {
+                currentImageUri = it
+                currentImageBitmap = null
+            }
         }
     }
     
@@ -610,11 +633,43 @@ fun NewChatScreen(
             onDismiss = { showAttachDialog = false },
             onCameraClick = {
                 // ===== 拍照功能 =====
-                // 使用 ActivityResultContracts.GetContent 启动系统图片选择器
-                // 用户可以选择拍照或从相册选择
-                // 选择后不跳转页面，直接在当前页面显示缩略图
-                // 与发送普通消息流程相同
-                imagePickerLauncher.launch("image/*")
+                // 使用 ActivityResultContracts.TakePicture() 直接启动系统相机
+                // 不跳转页面，与发送普通消息流程相同
+                activity?.let {
+                    // 检查相机权限
+                    val hasCameraPermission = PermissionHelper.hasPermission(it, Manifest.permission.CAMERA)
+                    if (hasCameraPermission) {
+                        // 创建图片文件名
+                        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                        val imageName = "IMG_$timeStamp.jpg"
+                        
+                        // 创建 ContentValues 用于保存图片
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.Images.Media.DISPLAY_NAME, imageName)
+                            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/EnglishReading")
+                                put(MediaStore.Images.Media.IS_PENDING, 1)
+                            }
+                        }
+                        
+                        // 创建图片 Uri
+                        val uri = it.contentResolver.insert(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            contentValues
+                        )
+                        
+                        uri?.let { imageUri ->
+                            // 保存 Uri 用于后续使用
+                            cameraImageUri = imageUri
+                            // 启动相机
+                            takePictureLauncher.launch(imageUri)
+                        }
+                    } else {
+                        // 请求相机权限
+                        PermissionHelper.checkAndRequestCameraPermission(it)
+                    }
+                }
             },
             onGalleryClick = {
                 // ===== 相册选择功能 =====
