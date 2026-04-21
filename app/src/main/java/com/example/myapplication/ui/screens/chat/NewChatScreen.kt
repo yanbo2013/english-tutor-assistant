@@ -28,20 +28,27 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.myapplication.utils.PermissionHelper
 import com.example.myapplication.utils.SpeechRecognizerHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * 新会话聊天页面
  * 
- * 这个页面用于新的聊天会话，包含：
+ * 这个页面用于新的聊天会话，采用微信聊天风格：
+ * - 发送消息后不跳转页面
+ * - 消息显示在聊天列表中
+ * - 等待LLM返回信息并展示
+ * 
+ * 页面结构：
  * - 顶部导航栏：返回按钮和标题
- * - 聊天列表区域：显示历史消息
+ * - 聊天列表区域：显示历史消息（用户消息和AI回复）
  * - 底部输入栏：文本输入框、附件按钮、录音按钮、发送按钮
  * 
  * 功能特点：
  * 1. 点击附件按钮时才显示附件上传弹窗（拍照/相册/文档）
  * 2. 支持语音输入
  * 3. 支持发送文本消息
+ * 4. 发送消息后留在当前页面，像微信聊天一样
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,6 +130,60 @@ fun NewChatScreen(
         }
     }
     
+    // ===== 发送消息函数 =====
+    // 这个函数处理消息发送逻辑：
+    // 1. 添加用户消息到列表
+    // 2. 清空输入框
+    // 3. 模拟LLM回复（或实际调用AI服务）
+    // 4. 添加AI回复到列表
+    // 注意：不跳转页面，像微信聊天一样
+    val sendMessage = {
+        if (promptText.isNotBlank() || currentImageUri != null) {
+            // ===== 步骤1：添加用户消息到列表 =====
+            val userMessage = ChatMessage(
+                content = promptText,
+                isUser = true,
+                imageUri = currentImageUri
+            )
+            messages = messages + userMessage
+            
+            // ===== 步骤2：清空输入框 =====
+            val currentPrompt = promptText
+            val currentUri = currentImageUri
+            promptText = ""
+            currentImageUri = null
+            currentImageBitmap = null
+            
+            // ===== 步骤3：调用回调处理业务逻辑 =====
+            // 这里可以实际调用AI服务
+            onSubmitPrompt(currentPrompt, currentUri)
+            
+            // ===== 步骤4：模拟LLM回复 =====
+            // 注意：这里只是模拟回复，实际应该调用AI服务
+            coroutineScope.launch {
+                // 模拟AI处理时间
+                delay(1000)
+                
+                // 模拟AI回复
+                // 实际应用中应该调用真实的AI服务
+                val aiReply = if (currentPrompt.contains("朗读") || currentPrompt.contains("读")) {
+                    "好的，我来帮您朗读这段内容。请点击下方的播放按钮开始收听。"
+                } else if (currentPrompt.contains("练习") || currentPrompt.contains("学习")) {
+                    "好的，让我们开始练习！请准备好后点击开始按钮。"
+                } else {
+                    "收到您的消息了。如果您有图片或文档，我可以帮您进行英语阅读练习。"
+                }
+                
+                // ===== 步骤5：添加AI回复到列表 =====
+                val aiMessage = ChatMessage(
+                    content = aiReply,
+                    isUser = false
+                )
+                messages = messages + aiMessage
+            }
+        }
+    }
+    
     // ===== UI布局 =====
     Scaffold(
         topBar = {
@@ -159,7 +220,8 @@ fun NewChatScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(vertical = 16.dp)
+                contentPadding = PaddingValues(vertical = 16.dp),
+                reverseLayout = false
             ) {
                 items(messages) { message ->
                     ChatMessageItem(message = message)
@@ -370,18 +432,10 @@ fun NewChatScreen(
                             }
                             
                             // ===== 发送按钮 =====
+                            // 点击后不跳转页面，像微信聊天一样
                             IconButton(
                                 onClick = {
-                                    if (promptText.isNotBlank() || currentImageUri != null) {
-                                        val newMessage = ChatMessage(
-                                            content = promptText,
-                                            isUser = true,
-                                            imageUri = currentImageUri
-                                        )
-                                        messages = messages + newMessage
-                                        onSubmitPrompt(promptText, currentImageUri)
-                                        promptText = ""
-                                    }
+                                    sendMessage()
                                 },
                                 enabled = promptText.isNotBlank() || currentImageUri != null
                             ) {
