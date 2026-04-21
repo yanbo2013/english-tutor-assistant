@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.myapplication.domain.model.Session
 import com.example.myapplication.domain.model.TextSegment
 import com.example.myapplication.ui.components.AttachFileDialog
@@ -34,6 +36,7 @@ fun HomeScreen(
     val activity = context as? Activity
     
     var showAttachDialog by remember { mutableStateOf(false) }
+    var showNewSessionDialog by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     
     val sessions = remember {
@@ -59,6 +62,14 @@ fun HomeScreen(
         )
     }
     
+    val hasSessions = sessions.isNotEmpty()
+    
+    LaunchedEffect(Unit) {
+        if (!hasSessions) {
+            showNewSessionDialog = true
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -69,6 +80,14 @@ fun HomeScreen(
                     ) 
                 },
                 actions = {
+                    if (hasSessions) {
+                        IconButton(onClick = { showNewSessionDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "新建会话"
+                            )
+                        }
+                    }
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -84,10 +103,30 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            if (sessions.isEmpty()) {
-                EmptyChatList(
-                    modifier = Modifier.weight(1f)
-                )
+            if (!hasSessions) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "开始您的第一次练习",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "点击下方按钮创建新会话",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier
@@ -127,6 +166,34 @@ fun HomeScreen(
                 onInputTextChange = { inputText = it }
             )
         }
+    }
+    
+    if (showNewSessionDialog) {
+        AttachFileDialog(
+            onDismiss = { showNewSessionDialog = false },
+            onCameraClick = {
+                activity?.let {
+                    val hasCameraPermission = PermissionHelper.hasPermission(it, Manifest.permission.CAMERA)
+                    val hasStoragePermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        PermissionHelper.hasPermission(it, Manifest.permission.READ_MEDIA_IMAGES)
+                    } else {
+                        PermissionHelper.hasPermission(it, Manifest.permission.READ_EXTERNAL_STORAGE)
+                    }
+                    
+                    if (hasCameraPermission && hasStoragePermission) {
+                        onNavigateToCamera()
+                    } else {
+                        PermissionHelper.checkAndRequestCameraPermission(it)
+                    }
+                }
+            },
+            onGalleryClick = {
+                
+            },
+            onDocumentClick = {
+                onNavigateToDocument()
+            }
+        )
     }
     
     if (showAttachDialog) {
