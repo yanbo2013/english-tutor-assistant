@@ -35,11 +35,11 @@ fun AppNavGraph(
                 onNavigateToDocument = {
                     navController.navigate(Screen.DocumentUpload.route)
                 },
-                onNavigateToHistory = {
-                    navController.navigate(Screen.History.route)
-                },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onSessionSelected = { sessionId ->
+                    navController.navigate(Screen.Practice.createRoute(sessionId))
                 }
             )
         }
