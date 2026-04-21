@@ -31,4 +31,11 @@ sealed class Screen(val route: String) {
     }
     object History : Screen("history")
     object Settings : Screen("settings")
+    
+    /**
+     * 新会话聊天页面
+     * 
+     * 用于创建新的聊天会话，包含底部输入栏和附件上传功能
+     */
+    object NewChat : Screen("new_chat")
 }

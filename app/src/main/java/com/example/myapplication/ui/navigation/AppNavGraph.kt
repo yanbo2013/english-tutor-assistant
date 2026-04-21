@@ -8,6 +8,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.example.myapplication.ui.screens.camera.CameraScreen
 import com.example.myapplication.ui.screens.chat.ImageChatScreen
+import com.example.myapplication.ui.screens.chat.NewChatScreen
 import com.example.myapplication.ui.screens.document.DocumentUploadScreen
 import com.example.myapplication.ui.screens.history.HistoryScreen
 import com.example.myapplication.ui.screens.home.HomeScreen
@@ -29,14 +30,11 @@ fun AppNavGraph(
         // 首页
         composable(Screen.Home.route) {
             HomeScreen(
-                onNavigateToCamera = {
-                    navController.navigate(Screen.Camera.route)
-                },
-                onNavigateToDocument = {
-                    navController.navigate(Screen.DocumentUpload.route)
-                },
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
+                },
+                onNavigateToNewChat = {
+                    navController.navigate(Screen.NewChat.route)
                 },
                 onSessionSelected = { sessionId ->
                     navController.navigate(Screen.Practice.createRoute(sessionId))
@@ -132,6 +130,28 @@ fun AppNavGraph(
             SettingsScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+        
+        // ===== 新会话聊天页 =====
+        // 点击新建session时跳转到这个页面
+        // 这个页面包含底部输入栏，点击附件按钮才显示附件上传弹窗
+        composable(Screen.NewChat.route) {
+            NewChatScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToCamera = {
+                    navController.navigate(Screen.Camera.route)
+                },
+                onNavigateToDocument = {
+                    navController.navigate(Screen.DocumentUpload.route)
+                },
+                onSubmitPrompt = { prompt, uri ->
+                    // TODO: 处理用户输入的提示词，调用AI服务
+                    // 暂时跳转到练习页面
+                    navController.navigate(Screen.Practice.createRoute(System.currentTimeMillis()))
                 }
             )
         }
