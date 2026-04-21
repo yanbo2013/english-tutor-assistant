@@ -26,23 +26,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.myapplication.ui.components.ChatMessage
+import com.example.myapplication.ui.components.ChatMessageItem
 import com.example.myapplication.utils.PermissionHelper
 import com.example.myapplication.utils.SpeechRecognizerHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * 新会话聊天页面
+ * 练习页面
  * 
  * 这个页面用于新的聊天会话，采用微信聊天风格：
  * - 发送消息后不跳转页面
- * - 消息显示在聊天列表中
+ * - 消息显示在聊天列表中（用户消息在右，AI消息在左）
  * - 等待LLM返回信息并展示
  * 
  * 页面结构：
- * - 顶部导航栏：返回按钮和标题
+ * - 顶部导航栏：返回按钮和标题"练习页面"
  * - 聊天列表区域：显示历史消息（用户消息和AI回复）
  * - 底部输入栏：文本输入框、附件按钮、录音按钮、发送按钮
+ * 
+ * 消息样式：
+ * - 用户消息：右侧对齐，蓝色气泡，显示"[我]"标识和头像
+ * - AI消息：左侧对齐，灰色气泡，显示"[AI回复]"标识和头像
  * 
  * 功能特点：
  * 1. 点击附件按钮时才显示附件上传弹窗（拍照/相册/文档）
@@ -190,7 +196,7 @@ fun NewChatScreen(
             TopAppBar(
                 title = { 
                     Text(
-                        text = "新会话",
+                        text = "练习页面",
                         fontWeight = FontWeight.Bold
                     ) 
                 },
