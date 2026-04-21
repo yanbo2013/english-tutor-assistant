@@ -77,6 +77,10 @@ fun NewChatScreen(
     var promptText by remember { mutableStateOf("") }
     var currentImageUri by remember { mutableStateOf<Uri?>(null) }
     var currentImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    // ===== 文档状态变量 =====
+    // 用于存储当前选中的文档信息
+    var currentDocumentUri by remember { mutableStateOf<Uri?>(null) }
+    var currentDocumentName by remember { mutableStateOf<String?>(null) }
     var messages by remember { mutableStateOf(listOf<ChatMessage>()) }
     var isRecording by remember { mutableStateOf(false) }
     var hasRecordPermission by remember { mutableStateOf(false) }
@@ -132,6 +136,35 @@ fun NewChatScreen(
         }
     }
     
+    // ===== 图片选择启动器 =====
+    // 用于从相册选择图片或拍照
+    // 选择后不跳转页面，直接在当前页面显示缩略图
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            // ===== 选择图片后，直接在当前页面显示缩略图 =====
+            // 不跳转页面，与发送普通消息流程相同
+            currentImageUri = it
+            currentImageBitmap = null
+        }
+    }
+    
+    // ===== 文档选择启动器 =====
+    // 用于选择 PDF、Word 等文档
+    // 选择后不跳转页面，直接在当前页面显示文档信息
+    val documentPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            // ===== 选择文档后，直接在当前页面显示文档信息 =====
+            // 不跳转页面，与发送普通消息流程相同
+            currentDocumentUri = it
+            // 从 URI 获取文件名
+            currentDocumentName = it.lastPathSegment ?: "document"
+        }
+    }
+    
     // ===== 页面初始化 =====
     LaunchedEffect(Unit) {
         activity?.let {
@@ -145,28 +178,45 @@ fun NewChatScreen(
     // ===== 发送消息函数 =====
     // 这个函数处理消息发送逻辑：
     // 1. 添加用户消息到列表
-    // 2. 清空输入框
-    // 3. 收起软键盘（新增）
+    // 2. 清空输入框和附件状态
+    // 3. 收起软键盘
     // 4. 调用回调处理业务逻辑
     // 5. 模拟LLM回复（或实际调用AI服务）
     // 6. 添加AI回复到列表
     // 注意：不跳转页面，像微信聊天一样
+    // 支持三种消息类型：纯文本、图片、文档
     val sendMessage = {
-        if (promptText.isNotBlank() || currentImageUri != null) {
+        if (promptText.isNotBlank() || currentImageUri != null || currentDocumentUri != null) {
+            // ===== 构建消息内容 =====
+            // 如果有文档，在消息内容中显示文档名
+            val messageContent = if (currentDocumentName != null && promptText.isBlank()) {
+                "[文档] $currentDocumentName"
+            } else if (currentDocumentName != null) {
+                "$promptText\n[文档] $currentDocumentName"
+            } else {
+                promptText
+            }
+            
             // ===== 步骤1：添加用户消息到列表 =====
             val userMessage = ChatMessage(
-                content = promptText,
+                content = messageContent,
                 isUser = true,
                 imageUri = currentImageUri
             )
             messages = messages + userMessage
             
-            // ===== 步骤2：清空输入框 =====
+            // ===== 步骤2：保存当前状态并清空输入 =====
             val currentPrompt = promptText
             val currentUri = currentImageUri
+            val currentDocUri = currentDocumentUri
+            val currentDocName = currentDocumentName
+            
+            // 清空所有输入状态
             promptText = ""
             currentImageUri = null
             currentImageBitmap = null
+            currentDocumentUri = null
+            currentDocumentName = null
             
             // ===== 步骤3：收起软键盘 =====
             // 发送消息后收起键盘，提供更好的用户体验
@@ -183,14 +233,27 @@ fun NewChatScreen(
                 // 模拟AI处理时间
                 delay(1000)
                 
-                // 模拟AI回复
-                // 实际应用中应该调用真实的AI服务
-                val aiReply = if (currentPrompt.contains("朗读") || currentPrompt.contains("读")) {
-                    "好的，我来帮您朗读这段内容。请点击下方的播放按钮开始收听。"
-                } else if (currentPrompt.contains("练习") || currentPrompt.contains("学习")) {
-                    "好的，让我们开始练习！请准备好后点击开始按钮。"
-                } else {
-                    "收到您的消息了。如果您有图片或文档，我可以帮您进行英语阅读练习。"
+                // ===== 模拟AI回复 =====
+                // 根据消息类型生成不同的回复
+                val aiReply = when {
+                    // 有文档的情况
+                    currentDocUri != null -> {
+                        "收到您上传的文档「$currentDocName」。我正在解析文档内容，请稍候..."
+                    }
+                    // 有图片的情况
+                    currentUri != null -> {
+                        "收到您上传的图片。我正在进行OCR识别，请稍候..."
+                    }
+                    // 纯文本的情况
+                    currentPrompt.contains("朗读") || currentPrompt.contains("读") -> {
+                        "好的，我来帮您朗读这段内容。请点击下方的播放按钮开始收听。"
+                    }
+                    currentPrompt.contains("练习") || currentPrompt.contains("学习") -> {
+                        "好的，让我们开始练习！请准备好后点击开始按钮。"
+                    }
+                    else -> {
+                        "收到您的消息了。如果您有图片或文档，我可以帮您进行英语阅读练习。"
+                    }
                 }
                 
                 // ===== 步骤6：添加AI回复到列表 =====
@@ -339,6 +402,69 @@ fun NewChatScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                     }
                     
+                    // ===== 显示文档信息（如果有） =====
+                    // 选择文档后，在输入框上侧展示文档信息
+                    // 类似图片缩略图的展示方式
+                    if (currentDocumentUri != null && currentDocumentName != null) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 文档图标
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                
+                                Spacer(modifier = Modifier.width(12.dp))
+                                
+                                // 文档名称
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = currentDocumentName ?: "文档",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "文档附件",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                
+                                // 删除文档按钮
+                                IconButton(
+                                    onClick = {
+                                        currentDocumentUri = null
+                                        currentDocumentName = null
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "删除文档",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
                     // 输入框行
                     Column(
                         modifier = Modifier.fillMaxWidth()
@@ -452,16 +578,17 @@ fun NewChatScreen(
                             
                             // ===== 发送按钮 =====
                             // 点击后不跳转页面，像微信聊天一样
+                            // 支持三种消息类型：纯文本、图片、文档
                             IconButton(
                                 onClick = {
                                     sendMessage()
                                 },
-                                enabled = promptText.isNotBlank() || currentImageUri != null
+                                enabled = promptText.isNotBlank() || currentImageUri != null || currentDocumentUri != null
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Send,
                                     contentDescription = "发送",
-                                    tint = if (promptText.isNotBlank() || currentImageUri != null) {
+                                    tint = if (promptText.isNotBlank() || currentImageUri != null || currentDocumentUri != null) {
                                         MaterialTheme.colorScheme.primary
                                     } else {
                                         MaterialTheme.colorScheme.onSurfaceVariant
@@ -477,30 +604,41 @@ fun NewChatScreen(
     
     // ===== 附件选择对话框 =====
     // 只有点击附件按钮时才显示此对话框
+    // 选择后不跳转页面，直接在当前页面显示缩略图或文档信息
     if (showAttachDialog) {
         AttachFileDialog(
             onDismiss = { showAttachDialog = false },
             onCameraClick = {
-                activity?.let {
-                    val hasCameraPermission = PermissionHelper.hasPermission(it, Manifest.permission.CAMERA)
-                    val hasStoragePermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                        PermissionHelper.hasPermission(it, Manifest.permission.READ_MEDIA_IMAGES)
-                    } else {
-                        PermissionHelper.hasPermission(it, Manifest.permission.READ_EXTERNAL_STORAGE)
-                    }
-                    
-                    if (hasCameraPermission && hasStoragePermission) {
-                        onNavigateToCamera()
-                    } else {
-                        PermissionHelper.checkAndRequestCameraPermission(it)
-                    }
-                }
+                // ===== 拍照功能 =====
+                // 使用 ActivityResultContracts.GetContent 启动系统图片选择器
+                // 用户可以选择拍照或从相册选择
+                // 选择后不跳转页面，直接在当前页面显示缩略图
+                // 与发送普通消息流程相同
+                imagePickerLauncher.launch("image/*")
             },
             onGalleryClick = {
-                // TODO: 相册选择功能待实现
+                // ===== 相册选择功能 =====
+                // 使用 ActivityResultContracts.GetContent 启动系统图片选择器
+                // 用户可以从相册选择图片
+                // 选择后不跳转页面，直接在当前页面显示缩略图
+                // 与发送普通消息流程相同
+                imagePickerLauncher.launch("image/*")
             },
             onDocumentClick = {
-                onNavigateToDocument()
+                // ===== 文档选择功能 =====
+                // 使用 ActivityResultContracts.OpenDocument 启动系统文档选择器
+                // 支持 PDF、Word、PowerPoint 等文档
+                // 选择后不跳转页面，直接在当前页面显示文档信息
+                // 与发送普通消息流程相同
+                documentPickerLauncher.launch(
+                    arrayOf(
+                        "application/pdf",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "application/msword",
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "application/vnd.ms-powerpoint"
+                    )
+                )
             }
         )
     }
