@@ -50,7 +50,13 @@ fun AppNavGraph(
                 },
                 onImageCaptured = { imageUri ->
                     // 拍照成功后跳转到 ImageChat 页面
-                    navController.navigate(Screen.ImageChat.createRoute(imageUri))
+                    // 使用 popUpTo 从页面栈中移除 CameraScreen
+                    // 这样在 ImageChat 页面按 back 键时，不会返回到 CameraScreen
+                    navController.navigate(Screen.ImageChat.createRoute(imageUri)) {
+                        popUpTo(Screen.Camera.route) {
+                            inclusive = true  // 包含 CameraScreen 一起移除
+                        }
+                    }
                 }
             )
         }
