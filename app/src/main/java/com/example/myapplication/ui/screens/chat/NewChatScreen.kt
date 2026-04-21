@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -66,6 +67,11 @@ fun NewChatScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
+    
+    // ===== 键盘控制器 =====
+    // 用于控制软键盘的显示和隐藏
+    // 发送消息后需要收起键盘
+    val keyboardController = LocalSoftwareKeyboardController.current
     
     // ===== 状态变量 =====
     var promptText by remember { mutableStateOf("") }
@@ -140,8 +146,10 @@ fun NewChatScreen(
     // 这个函数处理消息发送逻辑：
     // 1. 添加用户消息到列表
     // 2. 清空输入框
-    // 3. 模拟LLM回复（或实际调用AI服务）
-    // 4. 添加AI回复到列表
+    // 3. 收起软键盘（新增）
+    // 4. 调用回调处理业务逻辑
+    // 5. 模拟LLM回复（或实际调用AI服务）
+    // 6. 添加AI回复到列表
     // 注意：不跳转页面，像微信聊天一样
     val sendMessage = {
         if (promptText.isNotBlank() || currentImageUri != null) {
@@ -160,11 +168,16 @@ fun NewChatScreen(
             currentImageUri = null
             currentImageBitmap = null
             
-            // ===== 步骤3：调用回调处理业务逻辑 =====
+            // ===== 步骤3：收起软键盘 =====
+            // 发送消息后收起键盘，提供更好的用户体验
+            // 类似微信等聊天应用的行为
+            keyboardController?.hide()
+            
+            // ===== 步骤4：调用回调处理业务逻辑 =====
             // 这里可以实际调用AI服务
             onSubmitPrompt(currentPrompt, currentUri)
             
-            // ===== 步骤4：模拟LLM回复 =====
+            // ===== 步骤5：模拟LLM回复 =====
             // 注意：这里只是模拟回复，实际应该调用AI服务
             coroutineScope.launch {
                 // 模拟AI处理时间
@@ -180,7 +193,7 @@ fun NewChatScreen(
                     "收到您的消息了。如果您有图片或文档，我可以帮您进行英语阅读练习。"
                 }
                 
-                // ===== 步骤5：添加AI回复到列表 =====
+                // ===== 步骤6：添加AI回复到列表 =====
                 val aiMessage = ChatMessage(
                     content = aiReply,
                     isUser = false
