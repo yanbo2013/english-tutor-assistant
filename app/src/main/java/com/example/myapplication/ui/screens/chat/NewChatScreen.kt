@@ -188,6 +188,32 @@ fun NewChatScreen(
         cameraImageUriString = null
     }
     
+    // ===== 相机权限请求启动器 =====
+    // 用于请求相机权限，权限授权后自动启动相机
+    // 使用 rememberSaveable 保存待启动的参数，确保 Activity 重建后状态不丢失
+    var pendingCameraUriString by rememberSaveable { mutableStateOf<String?>(null) }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted) {
+            // 权限授权成功，自动启动相机
+            pendingCameraUriString?.let { uriString ->
+                val uri = Uri.parse(uriString)
+                // 保存到 cameraImageUriString 用于拍照回调
+                cameraImageUriString = uriString
+                takePictureLauncher.launch(uri)
+            }
+        } else {
+            // 权限被拒绝，清空待启动参数
+            pendingCameraUriString = null
+            // 可以显示一个提示
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("需要相机权限才能拍照")
+            }
+        }
+    }
+    
     // ===== 文档选择启动器 =====
     // 用于选择 PDF、Word 等文档
     // 选择后不跳转页面，直接在当前页面显示文档信息
@@ -654,9 +680,16 @@ fun NewChatScreen(
                     // ===== 先关闭对话框 =====
                     showAttachDialog = false
                     
-                    // 检查相机权限
-                    val hasCameraPermission = PermissionHelper.hasPermission(it, Manifest.permission.CAMERA)
-                    if (hasCameraPermission) {
+                    // ===== 获取所有相机权限 =====
+                    // 包含相机权限和存储权限（根据 Android 版本不同）
+                    val cameraPermissions = PermissionHelper.getCameraPermissions()
+                    
+                    // ===== 检查是否已有所有权限 =====
+                    val hasAllPermissions = PermissionHelper.hasPermissions(it, cameraPermissions)
+                    
+                    if (hasAllPermissions) {
+                        // ===== 已有权限，直接启动相机 =====
+                        
                         // 创建图片文件名
                         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                         val imageName = "IMG_$timeStamp.jpg"
@@ -685,8 +718,36 @@ fun NewChatScreen(
                             takePictureLauncher.launch(imageUri)
                         }
                     } else {
-                        // 请求相机权限
-                        PermissionHelper.checkAndRequestCameraPermission(it)
+                        // ===== 没有权限，先创建图片 Uri 并保存，然后请求权限 =====
+                        // 权限授权后会自动启动相机
+                        
+                        // 创建图片文件名
+                        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+                        val imageName = "IMG_$timeStamp.jpg"
+                        
+                        // 创建 ContentValues 用于保存图片
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.Images.Media.DISPLAY_NAME, imageName)
+                            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/EnglishReading")
+                                put(MediaStore.Images.Media.IS_PENDING, 1)
+                            }
+                        }
+                        
+                        // 创建图片 Uri
+                        val uri = it.contentResolver.insert(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            contentValues
+                        )
+                        
+                        uri?.let { imageUri ->
+                            // 保存 Uri 到 pendingCameraUriString，权限授权后使用
+                            pendingCameraUriString = imageUri.toString()
+                            // 请求相机权限
+                            // 权限授权后，cameraPermissionLauncher 会自动启动相机
+                            cameraPermissionLauncher.launch(cameraPermissions)
+                        }
                     }
                 }
             },
