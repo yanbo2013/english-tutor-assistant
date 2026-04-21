@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -160,17 +161,29 @@ fun NewChatScreen(
     // 用于直接启动相机拍照
     // 使用 ActivityResultContracts.TakePicture() 直接启动系统相机
     // 拍照后不跳转页面，直接在当前页面显示缩略图
-    var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
+    // 使用 rememberSaveable 确保在 Activity 重建时状态不丢失
+    var cameraImageUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
         if (success) {
             // 拍照成功，使用之前保存的 Uri
-            cameraImageUri?.let {
-                currentImageUri = it
+            cameraImageUri?.let { uri ->
+                // ===== 在 Android 10+ 上更新 IS_PENDING 标志 =====
+                // 确保图片可以被其他应用访问
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.Images.Media.IS_PENDING, 0)
+                    }
+                    context.contentResolver.update(uri, contentValues, null, null)
+                }
+                
+                currentImageUri = uri
                 currentImageBitmap = null
             }
         }
+        // 无论成功与否，清空 cameraImageUri
+        cameraImageUri = null
     }
     
     // ===== 文档选择启动器 =====
@@ -636,6 +649,9 @@ fun NewChatScreen(
                 // 使用 ActivityResultContracts.TakePicture() 直接启动系统相机
                 // 不跳转页面，与发送普通消息流程相同
                 activity?.let {
+                    // ===== 先关闭对话框 =====
+                    showAttachDialog = false
+                    
                     // 检查相机权限
                     val hasCameraPermission = PermissionHelper.hasPermission(it, Manifest.permission.CAMERA)
                     if (hasCameraPermission) {
@@ -677,6 +693,8 @@ fun NewChatScreen(
                 // 用户可以从相册选择图片
                 // 选择后不跳转页面，直接在当前页面显示缩略图
                 // 与发送普通消息流程相同
+                // ===== 先关闭对话框 =====
+                showAttachDialog = false
                 imagePickerLauncher.launch("image/*")
             },
             onDocumentClick = {
@@ -685,6 +703,8 @@ fun NewChatScreen(
                 // 支持 PDF、Word、PowerPoint 等文档
                 // 选择后不跳转页面，直接在当前页面显示文档信息
                 // 与发送普通消息流程相同
+                // ===== 先关闭对话框 =====
+                showAttachDialog = false
                 documentPickerLauncher.launch(
                     arrayOf(
                         "application/pdf",
