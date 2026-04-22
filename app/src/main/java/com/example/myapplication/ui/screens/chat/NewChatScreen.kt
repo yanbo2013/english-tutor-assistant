@@ -84,6 +84,11 @@ fun NewChatScreen(
     var promptText by remember { mutableStateOf("") }
     var currentImageUri by remember { mutableStateOf<Uri?>(null) }
     var currentImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    
+    // ===== 监听 currentImageUri 变化（用于调试） =====
+    LaunchedEffect(currentImageUri) {
+        android.util.Log.d("NewChatScreen_Debug", "currentImageUri 发生变化: $currentImageUri")
+    }
     // ===== 文档状态变量 =====
     // 用于存储当前选中的文档信息
     var currentDocumentUri by remember { mutableStateOf<Uri?>(null) }
@@ -131,18 +136,6 @@ fun NewChatScreen(
         }
     }
     
-    // ===== 权限请求启动器 =====
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasRecordPermission = permissions.values.all { it }
-        if (hasRecordPermission) {
-            isRecording = true
-        } else {
-            showPermissionDialog = true
-        }
-    }
-    
     // ===== 图片选择启动器 =====
     // 用于从相册选择图片
     // 选择后不跳转页面，直接在当前页面显示缩略图
@@ -166,26 +159,75 @@ fun NewChatScreen(
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
+        android.util.Log.d("NewChatScreen_Debug", "========== takePictureLauncher 回调 ==========")
+        android.util.Log.d("NewChatScreen_Debug", "success: $success")
+        android.util.Log.d("NewChatScreen_Debug", "cameraImageUriString before: $cameraImageUriString")
+        
         if (success) {
             // 拍照成功，使用之前保存的 Uri
             cameraImageUriString?.let { uriString ->
-                val uri = Uri.parse(uriString)
-                
-                // ===== 在 Android 10+ 上更新 IS_PENDING 标志 =====
-                // 确保图片可以被其他应用访问
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val contentValues = ContentValues().apply {
-                        put(MediaStore.Images.Media.IS_PENDING, 0)
+                try {
+                    android.util.Log.d("NewChatScreen_Debug", "进入 cameraImageUriString.let 分支")
+                    val uri = Uri.parse(uriString)
+                    
+                    android.util.Log.d("NewChatScreen_Debug", "解析后的 Uri: $uri")
+                    android.util.Log.d("NewChatScreen", "拍照成功，准备设置缩略图，Uri: $uri")
+                    
+                    // ===== 在 Android 10+ 上更新 IS_PENDING 标志 =====
+                    // 必须先设置为 0，图片才能被正常访问
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        android.util.Log.d("NewChatScreen_Debug", "Android 10+，更新 IS_PENDING 标志")
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.Images.Media.IS_PENDING, 0)
+                        }
+                        context.contentResolver.update(uri, contentValues, null, null)
+                        android.util.Log.d("NewChatScreen_Debug", "IS_PENDING 已更新为 0")
+                        android.util.Log.d("NewChatScreen", "已更新 IS_PENDING 标志为 0")
                     }
-                    context.contentResolver.update(uri, contentValues, null, null)
+                    
+                    // ===== 直接设置 Uri，不再进行额外验证 =====
+                    // TakePicture 返回 success=true 说明拍照已成功
+                    android.util.Log.d("NewChatScreen_Debug", "准备设置 currentImageUri")
+                    android.util.Log.d("NewChatScreen_Debug", "设置前 currentImageUri: $currentImageUri")
+                    currentImageUri = uri
+                    currentImageBitmap = null
+                    android.util.Log.d("NewChatScreen_Debug", "设置后 currentImageUri: $currentImageUri")
+                    
+                    android.util.Log.d("NewChatScreen", "缩略图设置成功，currentImageUri: $currentImageUri")
+                    
+                    // 可选：验证 Uri 是否可访问（仅用于调试）
+                    try {
+                        val mimeType = context.contentResolver.getType(uri)
+                        android.util.Log.d("NewChatScreen", "图片 MIME 类型: $mimeType")
+                        android.util.Log.d("NewChatScreen_Debug", "MIME 类型检查通过: $mimeType")
+                    } catch (e: Exception) {
+                        android.util.Log.w("NewChatScreen", "无法获取 MIME 类型", e)
+                        android.util.Log.w("NewChatScreen_Debug", "MIME 类型检查失败", e)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("NewChatScreen_Debug", "处理拍照结果异常", e)
+                    android.util.Log.e("NewChatScreen", "处理拍照结果失败", e)
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("图片处理失败: ${e.message}")
+                    }
                 }
-                
-                currentImageUri = uri
-                currentImageBitmap = null
+            } ?: run {
+                android.util.Log.e("NewChatScreen_Debug", "cameraImageUriString 为 null！")
+                android.util.Log.e("NewChatScreen", "cameraImageUriString 为 null，无法显示缩略图")
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("拍照失败，请重试")
+                }
             }
+        } else {
+            // 拍照失败或取消
+            android.util.Log.d("NewChatScreen_Debug", "拍照取消或失败")
+            android.util.Log.d("NewChatScreen", "拍照取消或失败，success=$success")
         }
+        
+        android.util.Log.d("NewChatScreen_Debug", "清空 cameraImageUriString")
         // 无论成功与否，清空 cameraImageUriString
         cameraImageUriString = null
+        android.util.Log.d("NewChatScreen_Debug", "========== takePictureLauncher 回调结束 ==========\n")
     }
     
     // ===== 相机权限请求启动器 =====
@@ -195,23 +237,51 @@ fun NewChatScreen(
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        android.util.Log.d("NewChatScreen_Debug", "========== cameraPermissionLauncher 回调 ==========")
+        android.util.Log.d("NewChatScreen_Debug", "permissions: $permissions")
+        
         val allGranted = permissions.values.all { it }
+        android.util.Log.d("NewChatScreen_Debug", "allGranted: $allGranted")
+        android.util.Log.d("NewChatScreen_Debug", "pendingCameraUriString: $pendingCameraUriString")
+        
         if (allGranted) {
             // 权限授权成功，自动启动相机
             pendingCameraUriString?.let { uriString ->
-                val uri = Uri.parse(uriString)
-                // 保存到 cameraImageUriString 用于拍照回调
-                cameraImageUriString = uriString
-                takePictureLauncher.launch(uri)
+                try {
+                    android.util.Log.d("NewChatScreen_Debug", "进入 pendingCameraUriString.let 分支")
+                    val uri = Uri.parse(uriString)
+                    // 保存到 cameraImageUriString 用于拍照回调
+                    cameraImageUriString = uriString
+                    
+                    android.util.Log.d("NewChatScreen_Debug", "cameraImageUriString 已设置: $cameraImageUriString")
+                    android.util.Log.d("NewChatScreen", "权限已授予，启动相机，Uri: $uri")
+                    takePictureLauncher.launch(uri)
+                    android.util.Log.d("NewChatScreen_Debug", "takePictureLauncher.launch() 已调用")
+                } catch (e: Exception) {
+                    android.util.Log.e("NewChatScreen_Debug", "解析 Uri 异常", e)
+                    android.util.Log.e("NewChatScreen", "解析 Uri 失败", e)
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("启动相机失败: ${e.message}")
+                    }
+                }
+            } ?: run {
+                android.util.Log.e("NewChatScreen_Debug", "pendingCameraUriString 为 null！")
+                android.util.Log.e("NewChatScreen", "pendingCameraUriString 为 null")
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("启动相机失败，请重试")
+                }
             }
         } else {
             // 权限被拒绝，清空待启动参数
+            android.util.Log.d("NewChatScreen_Debug", "权限被拒绝")
             pendingCameraUriString = null
             // 可以显示一个提示
             coroutineScope.launch {
                 snackbarHostState.showSnackbar("需要相机权限才能拍照")
             }
         }
+        
+        android.util.Log.d("NewChatScreen_Debug", "========== cameraPermissionLauncher 回调结束 ==========\n")
     }
     
     // ===== 文档选择启动器 =====
@@ -684,15 +754,29 @@ fun NewChatScreen(
                     // 包含相机权限和存储权限（根据 Android 版本不同）
                     val cameraPermissions = PermissionHelper.getCameraPermissions()
                     
+                    android.util.Log.d("NewChatScreen_Debug", "========== 点击拍照按钮 ==========")
+                    android.util.Log.d("NewChatScreen_Debug", "需要的权限: ${cameraPermissions.joinToString()}")
+                    
                     // ===== 检查是否已有所有权限 =====
                     val hasAllPermissions = PermissionHelper.hasPermissions(it, cameraPermissions)
                     
+                    android.util.Log.d("NewChatScreen_Debug", "hasAllPermissions: $hasAllPermissions")
+                    
+                    // 检查每个权限的状态
+                    cameraPermissions.forEach { perm ->
+                        val granted = PermissionHelper.hasPermission(it, perm)
+                        android.util.Log.d("NewChatScreen_Debug", "权限 $perm : ${if (granted) "已授予" else "未授予"}")
+                    }
+                    
                     if (hasAllPermissions) {
                         // ===== 已有权限，直接启动相机 =====
+                        android.util.Log.d("NewChatScreen_Debug", "检查通过，所有权限已授予")
                         
                         // 创建图片文件名
                         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                         val imageName = "IMG_$timeStamp.jpg"
+                        
+                        android.util.Log.d("NewChatScreen_Debug", "创建图片文件: $imageName")
                         
                         // 创建 ContentValues 用于保存图片
                         val contentValues = ContentValues().apply {
@@ -700,22 +784,43 @@ fun NewChatScreen(
                             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/EnglishReading")
-                                put(MediaStore.Images.Media.IS_PENDING, 1)
+                                // 注意：某些设备上使用 IS_PENDING=1 会导致拍照失败
+                                // 先尝试不设置 IS_PENDING，如果失败再考虑其他方式
+                                // put(MediaStore.Images.Media.IS_PENDING, 1)
+                                android.util.Log.d("NewChatScreen_Debug", "Android 10+，设置 RELATIVE_PATH，不设置 IS_PENDING")
+                            } else {
+                                android.util.Log.d("NewChatScreen_Debug", "Android 9 及以下")
                             }
                         }
                         
+                        android.util.Log.d("NewChatScreen_Debug", "准备插入 MediaStore...")
                         // 创建图片 Uri
                         val uri = it.contentResolver.insert(
                             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                             contentValues
                         )
                         
+                        android.util.Log.d("NewChatScreen_Debug", "MediaStore.insert() 返回: $uri")
+                        
                         uri?.let { imageUri ->
                             // 保存 Uri 的字符串形式用于后续使用
                             // 使用字符串形式更可靠，避免 Parcelable 在某些情况下的问题
                             cameraImageUriString = imageUri.toString()
+                            
+                            android.util.Log.d("NewChatScreen_Debug", "========== 启动相机（已有权限） ==========")
+                            android.util.Log.d("NewChatScreen_Debug", "imageUri: $imageUri")
+                            android.util.Log.d("NewChatScreen_Debug", "cameraImageUriString 已设置: $cameraImageUriString")
+                            android.util.Log.d("NewChatScreen", "已有权限，启动相机，Uri: $imageUri")
+                            
                             // 启动相机
                             takePictureLauncher.launch(imageUri)
+                            android.util.Log.d("NewChatScreen_Debug", "takePictureLauncher.launch() 已调用")
+                            android.util.Log.d("NewChatScreen_Debug", "=========================================\n")
+                        } ?: run {
+                            android.util.Log.e("NewChatScreen", "创建图片 Uri 失败")
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("创建图片文件失败，请重试")
+                            }
                         }
                     } else {
                         // ===== 没有权限，先创建图片 Uri 并保存，然后请求权限 =====
@@ -731,7 +836,11 @@ fun NewChatScreen(
                             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/EnglishReading")
-                                put(MediaStore.Images.Media.IS_PENDING, 1)
+                                // 注意：某些设备上使用 IS_PENDING=1 会导致拍照失败
+                                // put(MediaStore.Images.Media.IS_PENDING, 1)
+                                android.util.Log.d("NewChatScreen_Debug", "Android 10+，设置 RELATIVE_PATH，不设置 IS_PENDING")
+                            } else {
+                                android.util.Log.d("NewChatScreen_Debug", "Android 9 及以下")
                             }
                         }
                         
@@ -744,9 +853,22 @@ fun NewChatScreen(
                         uri?.let { imageUri ->
                             // 保存 Uri 到 pendingCameraUriString，权限授权后使用
                             pendingCameraUriString = imageUri.toString()
+                            
+                            android.util.Log.d("NewChatScreen_Debug", "========== 请求相机权限 ==========")
+                            android.util.Log.d("NewChatScreen_Debug", "imageUri: $imageUri")
+                            android.util.Log.d("NewChatScreen_Debug", "pendingCameraUriString 已设置: $pendingCameraUriString")
+                            android.util.Log.d("NewChatScreen", "无权限，请求权限后启动相机，Uri: $imageUri")
+                            
                             // 请求相机权限
                             // 权限授权后，cameraPermissionLauncher 会自动启动相机
                             cameraPermissionLauncher.launch(cameraPermissions)
+                            android.util.Log.d("NewChatScreen_Debug", "cameraPermissionLauncher.launch() 已调用")
+                            android.util.Log.d("NewChatScreen_Debug", "=========================================\n")
+                        } ?: run {
+                            android.util.Log.e("NewChatScreen", "创建图片 Uri 失败")
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("创建图片文件失败，请重试")
+                            }
                         }
                     }
                 }
