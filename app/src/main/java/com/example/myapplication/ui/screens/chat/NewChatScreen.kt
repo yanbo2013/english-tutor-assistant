@@ -309,6 +309,30 @@ fun NewChatScreen(
         }
     }
     
+    // ===== 录音权限请求启动器 =====
+    // 用于请求录音权限，权限授权后自动启动录音
+    val recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        android.util.Log.d("NewChatScreen_Debug", "========== 录音权限回调 ==========")
+        android.util.Log.d("NewChatScreen_Debug", "permissions: $permissions")
+        
+        val allGranted = permissions.values.all { it }
+        android.util.Log.d("NewChatScreen_Debug", "allGranted: $allGranted")
+        
+        if (allGranted) {
+            android.util.Log.d("NewChatScreen_Debug", "录音权限已授予，启动录音")
+            hasRecordPermission = true
+            recognitionError = null
+            speechRecognizerHelper.startRecording()
+        } else {
+            android.util.Log.d("NewChatScreen_Debug", "录音权限被拒绝")
+            showPermissionDialog = true
+        }
+        
+        android.util.Log.d("NewChatScreen_Debug", "========== 录音权限回调结束 ==========\n")
+    }
+    
     // ===== 发送消息函数 =====
     // 这个函数处理消息发送逻辑：
     // 1. 添加用户消息到列表
@@ -681,18 +705,28 @@ fun NewChatScreen(
                             // ===== 录音按钮 =====
                             IconButton(
                                 onClick = {
+                                    android.util.Log.d("NewChatScreen_Debug", "========== 点击录音按钮 ==========")
+                                    android.util.Log.d("NewChatScreen_Debug", "当前 isRecording: $isRecording")
+                                    android.util.Log.d("NewChatScreen_Debug", "当前 hasRecordPermission: $hasRecordPermission")
+                                    
                                     if (!hasRecordPermission) {
+                                        android.util.Log.d("NewChatScreen_Debug", "无录音权限，请求权限")
                                         activity?.let {
-                                            PermissionHelper.checkAndRequestRecordAudioPermission(it)
+                                            val permissions = PermissionHelper.getRecordAudioPermissions()
+                                            android.util.Log.d("NewChatScreen_Debug", "请求的权限: ${permissions.joinToString()}")
+                                            recordAudioPermissionLauncher.launch(permissions)
                                         }
                                     } else {
                                         if (isRecording) {
+                                            android.util.Log.d("NewChatScreen_Debug", "停止录音并识别")
                                             speechRecognizerHelper.stopRecordingAndRecognize()
                                         } else {
+                                            android.util.Log.d("NewChatScreen_Debug", "开始录音")
                                             recognitionError = null
                                             speechRecognizerHelper.startRecording()
                                         }
                                     }
+                                    android.util.Log.d("NewChatScreen_Debug", "=========================================\n")
                                 },
                                 modifier = Modifier
                                     .size(48.dp)

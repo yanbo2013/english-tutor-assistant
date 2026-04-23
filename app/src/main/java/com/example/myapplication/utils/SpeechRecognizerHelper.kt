@@ -3,12 +3,12 @@ package com.example.myapplication.utils
 import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
+import android.util.Base64
 import android.util.Log
 import com.example.myapplication.BuildConfig
 import com.example.myapplication.network.RetrofitClient
+import com.example.myapplication.network.SpeechRecognitionRequest
 import kotlinx.coroutines.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody
 import java.io.File
 
 /**
@@ -47,12 +47,13 @@ class SpeechRecognizerHelper(
     
     companion object {
         private const val TAG = "BaiduSpeechRecognizer"
-        private const val SAMPLE_RATE = 16000 // 采样率
+        // AMR_NB 格式的固定采样率为 8000Hz
+        private const val SAMPLE_RATE = 8000 // 采样率（AMR_NB 必须是 8000）
         
-        // 百度语音识别 API 基础配置
-        private const val BAIDU_SPEECH_API_BASE_URL = "https://vop.baidu.com/server_api"
+        // 百度语音识别 API 配置
         private const val DEV_PID = 80001 // 普通话+英语混合识别
-        private const val AUDIO_FORMAT = "audio/amr" // 音频格式
+        private const val AUDIO_FORMAT = "amr" // 音频格式
+        private const val CHANNEL = 1 // 单声道
     }
     
     /**
@@ -126,18 +127,25 @@ class SpeechRecognizerHelper(
      */
     private suspend fun recognizeWithBaiduAPI() {
         try {
+            Log.d(TAG, "========== 开始语音识别 ==========")
+            
             // 1. 获取 Access Token
+            Log.d(TAG, "步骤1: 获取 Access Token")
             val token = getAccessToken()
             if (token == null) {
+                Log.e(TAG, "Token 获取失败")
                 withContext(Dispatchers.Main) {
                     onError("获取 Token 失败")
                 }
                 return
             }
+            Log.d(TAG, "Token 获取成功: ${token.take(10)}...")
             
             // 2. 读取音频数据（从临时文件）
+            Log.d(TAG, "步骤2: 读取音频数据")
             val audioData = _tempAudioFile?.readBytes()
             if (audioData == null || audioData.isEmpty()) {
+                Log.e(TAG, "音频数据为空")
                 withContext(Dispatchers.Main) {
                     onError("音频数据为空")
                 }
@@ -145,40 +153,63 @@ class SpeechRecognizerHelper(
             }
             
             Log.d(TAG, "音频数据大小: ${audioData.size} bytes")
+            Log.d(TAG, "临时文件路径: ${_tempAudioFile?.absolutePath}")
             
-            // 3. 调用识别 API（常量配置 + 动态拼接）
-            val url = buildString {
-                append(BAIDU_SPEECH_API_BASE_URL)
-                append("?dev_pid=").append(DEV_PID)
-                append("&cuid=").append(deviceId)
-                append("&token=").append(token)
-            }
-            val mediaType = AUDIO_FORMAT.toMediaTypeOrNull()
-                ?: throw IllegalStateException("Invalid media type: $AUDIO_FORMAT")
-            val requestBody = RequestBody.create(mediaType, audioData)
+            // 3. Base64 编码音频数据
+            Log.d(TAG, "步骤3: Base64 编码音频数据")
+            val base64Speech = Base64.encodeToString(audioData, Base64.NO_WRAP)
+            Log.d(TAG, "Base64 编码后长度: ${base64Speech.length}")
             
-            val response = RetrofitClient.baiduSpeechApi.recognizeSpeech(url, requestBody)
+            // 4. 构建请求体（JSON 格式）
+            Log.d(TAG, "步骤4: 构建 JSON 请求体")
+            val request = SpeechRecognitionRequest(
+                format = AUDIO_FORMAT,
+                rate = SAMPLE_RATE,
+                channel = CHANNEL,
+                cuid = deviceId,
+                dev_pid = DEV_PID,
+                speech = base64Speech,
+                len = audioData.size
+            )
+            Log.d(TAG, "请求参数: format=${request.format}, rate=${request.rate}, channel=${request.channel}")
+            Log.d(TAG, "设备 ID (CUID): $deviceId")
             
-            // 4. 处理结果
+            // 5. 调用识别 API
+            Log.d(TAG, "步骤5: 调用百度 API")
+            val response = RetrofitClient.baiduSpeechApi.recognizeSpeech(token, deviceId, request)
+            Log.d(TAG, "API 响应接收成功")
+            
+            // 6. 处理结果
             withContext(Dispatchers.Main) {
+                Log.d(TAG, "步骤6: 处理识别结果")
+                Log.d(TAG, "err_no: ${response.err_no}")
+                Log.d(TAG, "err_msg: ${response.err_msg}")
+                Log.d(TAG, "result: ${response.result}")
+                
                 if (response.err_no == 0 && response.result != null && response.result.isNotEmpty()) {
                     val recognizedText = response.result.joinToString("")
-                    Log.d(TAG, "识别成功: $recognizedText")
+                    Log.d(TAG, "✅ 识别成功: $recognizedText")
                     onResult(recognizedText)
                 } else {
                     val errorMsg = response.err_msg ?: "未知错误"
-                    Log.e(TAG, "识别失败: err_no=${response.err_no}, msg=$errorMsg")
-                    onError("识别失败: $errorMsg")
+                    Log.e(TAG, "❌ 识别失败: err_no=${response.err_no}, msg=$errorMsg")
+                    onError("识别失败: $errorMsg (错误码: ${response.err_no})")
                 }
             }
             
+            Log.d(TAG, "========== 语音识别结束 ==========\n")
+            
         } catch (e: Exception) {
             e.printStackTrace()
+            Log.e(TAG, "❌ 网络请求异常: ${e.javaClass.simpleName}")
+            Log.e(TAG, "异常消息: ${e.message}")
+            Log.e(TAG, "异常堆栈:", e)
             withContext(Dispatchers.Main) {
                 onError("网络请求失败: ${e.message}")
             }
         } finally {
             // 清理临时文件
+            Log.d(TAG, "清理临时文件")
             _tempAudioFile?.delete()
             _tempAudioFile = null
         }
@@ -190,8 +221,12 @@ class SpeechRecognizerHelper(
     private suspend fun getAccessToken(): String? {
         // 检查 Token 是否过期（提前 5 分钟刷新）
         if (accessToken != null && System.currentTimeMillis() < tokenExpireTime - 300000) {
+            Log.d(TAG, "使用缓存的 Token")
             return accessToken
         }
+        
+        Log.d(TAG, "开始获取新的 Access Token")
+        Log.d(TAG, "API Key: ${BuildConfig.BAIDU_SPEECH_API_KEY.take(10)}...")
         
         return try {
             val response = RetrofitClient.baiduOAuthApi.getAccessToken(
@@ -202,12 +237,15 @@ class SpeechRecognizerHelper(
             accessToken = response.access_token
             tokenExpireTime = System.currentTimeMillis() + (response.expires_in * 1000L)
             
-            Log.d(TAG, "Token 获取成功，有效期: ${response.expires_in}秒")
+            Log.d(TAG, "✅ Token 获取成功，有效期: ${response.expires_in}秒")
+            Log.d(TAG, "Token 过期时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(tokenExpireTime))}")
             accessToken
             
         } catch (e: Exception) {
             e.printStackTrace()
-            Log.e(TAG, "Token 获取失败: ${e.message}")
+            Log.e(TAG, "❌ Token 获取失败: ${e.javaClass.simpleName}")
+            Log.e(TAG, "错误消息: ${e.message}")
+            Log.e(TAG, "错误堆栈:", e)
             null
         }
     }
