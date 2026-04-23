@@ -2,7 +2,6 @@ package com.example.myapplication.network
 
 import retrofit2.http.*
 import okhttp3.RequestBody
-import okhttp3.ResponseBody
 
 /**
  * 百度语音识别 API 接口
@@ -20,13 +19,14 @@ interface BaiduSpeechApi {
     ): AccessTokenResponse
     
     /**
-     * 短语音识别（REST API）
+     * 短语音识别（REST API - JSON 格式）
+     * 注意：使用 JSON 格式，包含 format、rate、channel 等参数
      */
-    @POST("v1/pro_api")
-    @Headers("Content-Type: audio/pcm;rate=16000")
+    @POST("server_api")
     suspend fun recognizeSpeech(
-        @Url url: String,
-        @Body audioData: RequestBody
+        @Query("token") token: String,
+        @Query("cuid") cuid: String,  // cuid 也需要放在 URL 参数中
+        @Body requestBody: SpeechRecognitionRequest
     ): SpeechRecognitionResponse
 }
 
@@ -40,6 +40,19 @@ data class AccessTokenResponse(
     val scope: String?,
     val session_key: String?,
     val session_secret: String?
+)
+
+/**
+ * 语音识别请求体（JSON 格式）
+ */
+data class SpeechRecognitionRequest(
+    val format: String,      // 音频格式：pcm、wav、amr
+    val rate: Int,           // 采样率：8000 或 16000
+    val channel: Int,        // 声道数：1（单声道）
+    val cuid: String,        // 用户唯一标识
+    val dev_pid: Int,        // 语言模型ID
+    val speech: String,      // Base64 编码的音频数据
+    val len: Int             // 原始音频长度（字节数）
 )
 
 /**
