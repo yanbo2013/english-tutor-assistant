@@ -33,10 +33,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.myapplication.ui.components.ChatMessage
 import com.example.myapplication.ui.components.ChatMessageItem
+import com.example.myapplication.utils.AIService
 import com.example.myapplication.utils.PermissionHelper
 import com.example.myapplication.utils.SpeechRecognizerHelper
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -385,40 +387,33 @@ fun NewChatScreen(
             // 这里可以实际调用AI服务
             onSubmitPrompt(currentPrompt, currentUri)
             
-            // ===== 步骤5：模拟LLM回复 =====
-            // 注意：这里只是模拟回复，实际应该调用AI服务
+            // ===== 步骤5：调用 AI 服务生成回复 =====
+            // 优先使用 AIService.chat()（会自动根据 API Key 配置决定调用真实 API 还是本地 mock）
             coroutineScope.launch {
-                // 模拟AI处理时间
-                delay(1000)
-                
-                // ===== 模拟AI回复 =====
-                // 根据消息类型生成不同的回复
-                val aiReply = when {
-                    // 有文档的情况
-                    currentDocUri != null -> {
-                        "收到您上传的文档「$currentDocName」。我正在解析文档内容，请稍候..."
-                    }
-                    // 有图片的情况
-                    currentUri != null -> {
-                        "收到您上传的图片。我正在进行OCR识别，请稍候..."
-                    }
-                    // 纯文本的情况
-                    currentPrompt.contains("朗读") || currentPrompt.contains("读") -> {
-                        "好的，我来帮您朗读这段内容。请点击下方的播放按钮开始收听。"
-                    }
-                    currentPrompt.contains("练习") || currentPrompt.contains("学习") -> {
-                        "好的，让我们开始练习！请准备好后点击开始按钮。"
-                    }
-                    else -> {
-                        "收到您的消息了。如果您有图片或文档，我可以帮您进行英语阅读练习。"
-                    }
+                // 先给出一个简短的"处理中"反馈，让对话更自然
+                val ackReply = when {
+                    currentDocUri != null -> "收到您上传的文档「$currentDocName」，正在为您分析..."
+                    currentUri != null -> "收到您上传的图片，正在识别内容..."
+                    else -> null
                 }
-                
-                // ===== 步骤6：添加AI回复到列表 =====
-                val aiMessage = ChatMessage(
-                    content = aiReply,
-                    isUser = false
-                )
+                if (ackReply != null) {
+                    messages = messages + ChatMessage(content = ackReply, isUser = false)
+                }
+
+                // 调用 AI 服务（IO 线程执行网络请求）
+                val aiReply = withContext(Dispatchers.IO) {
+                    // 如果有附件，把附件信息也拼接到用户消息里
+                    val fullPrompt = buildString {
+                        if (currentDocName != null) append("用户上传了文档《$currentDocName》。")
+                        if (currentUri != null) append("用户上传了一张图片。")
+                        if (currentPrompt.isNotBlank()) append("用户的消息：$currentPrompt")
+                        if (isBlank()) append("用户发送了附件，请回应。")
+                    }
+                    AIService.chat(fullPrompt)
+                }
+
+                // ===== 步骤6：添加 AI 回复到列表 =====
+                val aiMessage = ChatMessage(content = aiReply, isUser = false)
                 messages = messages + aiMessage
             }
         }

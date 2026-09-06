@@ -13,6 +13,7 @@ object RetrofitClient {
     
     private const val BAIDU_SPEECH_BASE_URL = "https://vop.baidu.com/"
     private const val BAIDU_OAUTH_BASE_URL = "https://aip.baidubce.com/"
+    private const val DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1/"
     
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
@@ -47,5 +48,17 @@ object RetrofitClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(BaiduSpeechApi::class.java)
+    }
+
+    /**
+     * DeepSeek 大模型 API 客户端
+     */
+    val deepSeekApi: DeepSeekApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(DEEPSEEK_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(DeepSeekApi::class.java)
     }
 }

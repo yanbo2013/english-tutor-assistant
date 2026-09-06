@@ -13,22 +13,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.MyApp
+import com.example.myapplication.data.local.mapper.toDomain
 import com.example.myapplication.domain.model.Session
-import com.example.myapplication.domain.model.TextSegment
 import com.example.myapplication.ui.components.ChatListItem
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
 
 /**
  * 首页
- * 
+ *
  * 功能说明：
- * 1. 有历史session时：显示历史session列表，不显示底部输入框
- * 2. 无历史session时：显示引导页面，提示用户开始新会话
- * 3. 导航栏右上角：有历史session时显示"新建会话"按钮
- * 4. 点击新建会话按钮：直接跳转到新会话页面，不显示附件上传弹窗
- * 
- * 注意：
- * - 附件上传弹窗只在新会话页面（NewChatScreen）中点击附件按钮时才显示
- * - 首页不显示底部输入框
+ * 1. 有历史 session 时：显示从 Room 数据库加载的历史 session 列表
+ * 2. 无历史 session 时：显示引导页面，提示用户开始新会话
+ * 3. 导航栏右上角：有历史 session 时显示"新建会话"按钮
+ *
+ * 数据源：SessionDao.getAllSessions() 返回 Flow，自动观察数据库变化
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,62 +37,40 @@ fun HomeScreen(
     onNavigateToNewChat: () -> Unit,
     onSessionSelected: (Long) -> Unit
 ) {
-    // ===== 状态变量 =====
-    // TODO: 未来需要从数据库获取真实的session列表
-    val sessions = remember {
-        mutableStateListOf(
-            Session(
-                id = 1,
-                timestamp = System.currentTimeMillis() - 3600000,
-                imageUrl = null,
-                recognizedText = "这是一段测试文本，用于展示聊天列表的预览效果。这段文字会被截断显示。",
-                segments = listOf(
-                    TextSegment(index = 1, text = "段落1")
-                ),
-                sessionType = "practice"
-            ),
-            Session(
-                id = 2,
-                timestamp = System.currentTimeMillis() - 7200000,
-                imageUrl = null,
-                recognizedText = "复习昨天学习的内容，重点练习发音和语调。",
-                segments = listOf(),
-                sessionType = "review"
-            )
-        )
+    val context = LocalContext.current
+    // 从 MyApp 单例获取数据库
+    val sessionDao = remember { MyApp.instance.database.sessionDao() }
+
+    // ===== 观察数据库 Flow =====
+    // Room 返回的 Flow 会自动在数据变化时重新发射
+    val sessions by produceState<List<Session>>(initialValue = emptyList(), sessionDao) {
+        sessionDao.getAllSessions()
+            .map { entityList -> entityList.map { it.toDomain() } }
+            .collectLatest { value = it }
     }
-    
+
     // ===== 标志位 =====
-    // 是否有历史session
     val hasSessions = sessions.isNotEmpty()
-    
+
     // ===== 页面首次启动时的逻辑 =====
-    // 无历史session时，可以选择直接跳转到新会话页面
-    // 这里选择显示引导页面，让用户更清楚当前状态
     LaunchedEffect(Unit) {
-        // 如果没有历史session，可以选择直接跳转到新会话页面
-        // if (!hasSessions) {
-        //     onNavigateToNewChat()
-        // }
+        // 预留：如果没有历史 session，可以选择直接跳转到新会话页面
     }
-    
+
     // ===== UI布局 =====
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
                         text = "AI英语阅读伴侣",
                         fontWeight = FontWeight.Bold
-                    ) 
+                    )
                 },
                 actions = {
                     // ===== 新建会话按钮 =====
-                    // 只有当有历史session时才显示这个按钮
-                    // 点击此按钮直接跳转到新会话页面，不显示附件上传弹窗
                     if (hasSessions) {
                         IconButton(onClick = {
-                            // 直接跳转到新会话页面
                             onNavigateToNewChat()
                         }) {
                             Icon(
@@ -101,7 +79,7 @@ fun HomeScreen(
                             )
                         }
                     }
-                    
+
                     // ===== 设置按钮 =====
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
@@ -120,9 +98,7 @@ fun HomeScreen(
         ) {
             // ===== 内容区域 =====
             if (!hasSessions) {
-                // ===== 无历史session时的引导页面 =====
-                // 显示引导文字，提示用户开始新会话
-                // 注意：首页不显示底部输入框
+                // ===== 无历史 session 时的引导页面 =====
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -145,7 +121,6 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(24.dp))
-                        // ===== 开始新会话按钮 =====
                         Button(
                             onClick = {
                                 onNavigateToNewChat()
@@ -161,8 +136,7 @@ fun HomeScreen(
                     }
                 }
             } else {
-                // ===== 有历史session时的会话列表 =====
-                // 注意：不显示底部输入框
+                // ===== 有历史 session 时的会话列表 =====
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
@@ -173,11 +147,9 @@ fun HomeScreen(
                         items = sessions,
                         key = { session -> session.id }
                     ) { session ->
-                        // ===== 会话列表项 =====
                         ChatListItem(
                             session = session,
                             onClick = {
-                                // 点击会话项跳转到练习页面
                                 onSessionSelected(session.id)
                             }
                         )
@@ -188,13 +160,6 @@ fun HomeScreen(
                     }
                 }
             }
-            
-            // ===== 注意：首页不显示底部输入框 =====
-            // 底部输入框只在新会话页面（NewChatScreen）中显示
-            // 这样设计的原因：
-            // 1. 首页是历史会话列表页，不需要输入功能
-            // 2. 输入功能只在新会话页面中需要
-            // 3. 保持页面职责单一，避免混淆
         }
     }
 }

@@ -11,10 +11,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.myapplication.utils.DocumentParser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 文档上传页
@@ -26,6 +30,9 @@ fun DocumentUploadScreen(
     onNavigateBack: () -> Unit,
     onDocumentUploaded: (sessionId: Long, text: String) -> Unit
 ) {
+    val context = LocalContext.current
+    val documentParser = remember { DocumentParser(context) }
+    
     var selectedFileName by remember { mutableStateOf<String?>(null) }
     var isParsing by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -37,16 +44,38 @@ fun DocumentUploadScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let {
-            selectedFileName = uri.lastPathSegment ?: "document"
-            isParsing = true
+            // 重置之前的状态
             errorMessage = null
+            isParsing = true
             
-            // 模拟解析延迟
+            // 使用 ContentResolver 获取真实文件名（比 uri.lastPathSegment 更可靠）
+            selectedFileName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIdx != -1) cursor.getString(nameIdx) else null
+                } else null
+            } ?: uri.lastPathSegment ?: "document"
+            
+            // 调用真实的文档解析（DocumentParser）
+            // 注意：parseDocument 涉及文件 I/O，必须在 IO 线程执行避免阻塞 UI
             coroutineScope.launch {
-                kotlinx.coroutines.delay(1500)
+                val result = withContext(Dispatchers.IO) {
+                    documentParser.parseDocument(uri)
+                }
                 isParsing = false
-                // TODO: 实际解析文档
-                onDocumentUploaded(System.currentTimeMillis(), "文档解析后的文本内容")
+                
+                result.fold(
+                    onSuccess = { text ->
+                        if (text.isBlank()) {
+                            errorMessage = "文档内容为空，无法提取文本"
+                        } else {
+                            onDocumentUploaded(System.currentTimeMillis(), text)
+                        }
+                    },
+                    onFailure = { e ->
+                        errorMessage = "解析失败：${e.message}"
+                    }
+                )
             }
         }
     }
